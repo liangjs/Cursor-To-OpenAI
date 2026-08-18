@@ -6,20 +6,14 @@ const { v4: uuidv4, v5: uuidv5 } = require('uuid');
 const config = require('../config/config');
 const $root = require('../proto/message.js');
 const { generateCursorBody, chunkToUtf8String, generateHashed64Hex, generateCursorChecksum } = require('../utils/utils.js');
+const { CursorApiKeyAuthError, resolveAccessToken } = require('../auth/apiKey');
 
 router.get("/models", async (req, res) => {
   try{
-    let bearerToken = req.headers.authorization?.replace('Bearer ', '');
-    let authToken = bearerToken.split(',').map((key) => key.trim())[0];
-    if (authToken && authToken.includes('%3A%3A')) {
-      authToken = authToken.split('%3A%3A')[1];
-    }
-    else if (authToken && authToken.includes('::')) {
-      authToken = authToken.split('::')[1];
-    }
-
-    const cursorChecksum = req.headers['x-cursor-checksum'] 
-      ?? generateCursorChecksum(authToken.trim());
+    const { accessToken: authToken, apiKeyMode } = await resolveAccessToken(req.headers.authorization, 'first');
+    const cursorChecksum = apiKeyMode
+      ? generateCursorChecksum(authToken)
+      : req.headers['x-cursor-checksum'] ?? generateCursorChecksum(authToken.trim());
     const cursorClientVersion = config.cursorClientVersion
 
     const availableModelsResponse = await fetch("https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels", {
@@ -59,6 +53,9 @@ router.get("/models", async (req, res) => {
   }
   catch (error) {
     console.error(error);
+    if (error instanceof CursorApiKeyAuthError) {
+      return res.status(error.status).json({ error: error.code });
+    }
     return res.status(500).json({
       error: 'Internal server error',
     });
@@ -69,26 +66,17 @@ router.post('/chat/completions', async (req, res) => {
 
   try {
     const { model, messages, stream = false } = req.body;
-    let bearerToken = req.headers.authorization?.replace('Bearer ', '');
-    const keys = bearerToken.split(',').map((key) => key.trim());
-    // Randomly select one key to use
-    let authToken = keys[Math.floor(Math.random() * keys.length)]
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0 || !authToken) {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({
         error: 'Invalid request. Messages should be a non-empty array and authorization is required',
       });
     }
 
-    if (authToken && authToken.includes('%3A%3A')) {
-      authToken = authToken.split('%3A%3A')[1];
-    }
-    else if (authToken && authToken.includes('::')) {
-      authToken = authToken.split('::')[1];
-    }
-
-    const cursorChecksum = req.headers['x-cursor-checksum']
-      ?? generateCursorChecksum(authToken.trim());
+    const { accessToken: authToken, apiKeyMode } = await resolveAccessToken(req.headers.authorization, 'random');
+    const cursorChecksum = apiKeyMode
+      ? generateCursorChecksum(authToken)
+      : req.headers['x-cursor-checksum'] ?? generateCursorChecksum(authToken.trim());
 
     const sessionid = uuidv5(authToken,  uuidv5.DNS);
     const clientKey = generateHashed64Hex(authToken)
@@ -264,14 +252,19 @@ router.post('/chat/completions', async (req, res) => {
     console.error('Error:', error);
     if (!res.headersSent) {
       const errorMessage = {
-        error: error.name === 'TimeoutError' ? 'Request timeout' : 'Internal server error'
+        error: error instanceof CursorApiKeyAuthError
+          ? error.code
+          : error.name === 'TimeoutError' ? 'Request timeout' : 'Internal server error'
       };
+      const status = error instanceof CursorApiKeyAuthError
+        ? error.status
+        : error.name === 'TimeoutError' ? 408 : 500;
 
       if (req.body.stream) {
         res.write(`data: ${JSON.stringify(errorMessage)}\n\n`);
         return res.end();
       } else {
-        return res.status(error.name === 'TimeoutError' ? 408 : 500).json(errorMessage);
+        return res.status(status).json(errorMessage);
       }
     }
   }

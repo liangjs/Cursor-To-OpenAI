@@ -12,6 +12,16 @@ Visit [Cursor](https://www.cursor.com) and register a account.
 - 150 fast premium requests are given, which can be reset by deleting the account and then registering again
 - Suggest to use gmail/outlook email, some temp emails have been disabled by Cursor.
 
+### Use Cursor API key
+
+You can call the OpenAI-compatible API directly with a Cursor API key. Pass the caller's API key in the Bearer header:
+
+```http
+Authorization: Bearer crsr_...
+```
+
+The service keeps Cursor sessions in process memory for each API key and does not persist credentials to disk.
+
 ### Get Cursor client cookie
 
 The cookie from Cursor webpage does not work in Cursor-To-OpenAI server. You need to get the Cursor client cookie following these steps:
@@ -72,12 +82,12 @@ npm run start
 1. Get models
     - Url：`http://localhost:3010/v1/models`
     - Request：`GET`
-    - Authentication：`Bearer Token`（The value of `Cursor Cookie`)
+    - Authentication：`Bearer Token`（The value of a Cursor API key or Cursor Cookie）
 
 2. Chat completion
     - Url：`http://localhost:3010/v1/chat/completions`
     - Request：`POST`
-    - Authentication：`Bearer Token`（The value of `Cursor Cookie`，supports comma-separated values）
+    - Authentication：`Bearer Token`（The value of a Cursor API key or Cursor Cookie；Cursor Cookie supports comma-separated values）
 
  for the response body, please refer to the OpenAI interface
 
@@ -85,7 +95,7 @@ npm run start
 ```
 from openai import OpenAI
 
-client = OpenAI(api_key="{{{Replace by the Cursor cookie of your account. It starts with user_...}}}",
+client = OpenAI(api_key="{{{Replace by your Cursor API key (crsr_...) or Cursor cookie}}}",
                 base_url="http://localhost:3010/v1")
 
 response = client.chat.completions.create(
@@ -101,7 +111,8 @@ print(response.choices)
 
 ## Notes
 
-- Please keep your Cursor cookie properly and do not disclose it to others
+- Please keep your Cursor API key and Cursor cookie properly and do not disclose them to others
+- Cursor API keys and exchanged access tokens are kept only in process memory
 - This project is for study and research only, please abide by the Cursor Terms of Use
 
 ## Acknowledgements
